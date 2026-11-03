@@ -59,10 +59,12 @@ impl Develop {
             app.library.clear_selection();
             return;
         }
-        if context.input_mut(|input| {
-            input.consume_key(egui::Modifiers::NONE, egui::Key::Delete)
-                || input.consume_key(egui::Modifiers::NONE, egui::Key::Backspace)
-        }) {
+        if app.caps().has_folders()
+            && context.input_mut(|input| {
+                input.consume_key(egui::Modifiers::NONE, egui::Key::Delete)
+                    || input.consume_key(egui::Modifiers::NONE, egui::Key::Backspace)
+            })
+        {
             let selected = app.library.selected_assets();
             let assets = if selected.is_empty() {
                 current_photo_asset(app).into_iter().collect()

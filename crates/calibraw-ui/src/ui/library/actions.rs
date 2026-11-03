@@ -164,23 +164,29 @@ pub(crate) fn photo_actions_menu(
     if menu_row(
         ui,
         enabled,
-        MenuItem::new(tr("Mark Pending Delete"))
-            .icon(regular::TRASH)
-            .destructive(),
+        MenuItem::new(tr(if app.caps().has_folders() {
+            "Mark Pending Delete"
+        } else {
+            "Delete…"
+        }))
+        .icon(regular::TRASH)
+        .destructive(),
     )
     .clicked()
     {
         action = Some(LibraryAction::Delete(assets.to_vec()));
     }
-    if menu_row(
-        ui,
-        enabled
-            && assets
-                .iter()
-                .any(|asset| app.library.is_pending_delete(asset)),
-        MenuItem::new(tr("Restore Pending Delete marks")).icon(regular::ARROW_COUNTER_CLOCKWISE),
-    )
-    .clicked()
+    if app.caps().has_folders()
+        && menu_row(
+            ui,
+            enabled
+                && assets
+                    .iter()
+                    .any(|asset| app.library.is_pending_delete(asset)),
+            MenuItem::new(tr("Restore Pending Delete marks"))
+                .icon(regular::ARROW_COUNTER_CLOCKWISE),
+        )
+        .clicked()
     {
         action = Some(LibraryAction::RestorePending(assets.to_vec()));
     }
@@ -467,8 +473,15 @@ pub(crate) fn apply_library_action(
             }
         }
         LibraryAction::Delete(assets) => {
-            app.library.mark_pending_delete(&assets, true);
-            app.ui.notice = Some(app.library.status.clone());
+            if app.caps().has_folders() {
+                app.library.mark_pending_delete(&assets, true);
+                app.ui.notice = Some(app.library.status.clone());
+            } else if !assets.is_empty() {
+                // The folder-local workflow does not replace media-library
+                // permissions and their existing confirmed removal action.
+                app.settle_library_review_saves();
+                app.library.delete_originals_confirmation = Some(assets);
+            }
         }
         LibraryAction::RestorePending(assets) => {
             app.library.mark_pending_delete(&assets, false);

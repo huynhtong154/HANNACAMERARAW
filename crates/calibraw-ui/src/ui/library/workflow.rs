@@ -202,7 +202,12 @@ impl LibraryState {
 }
 
 pub(crate) fn handle_workflow_shortcuts(app: &mut CalibRawApp, context: &egui::Context) -> bool {
-    if !app.navigation_shortcuts_allowed(context)
+    if !app.caps().has_folders()
+        || !matches!(
+            app.ui.active_tab,
+            crate::app::AppTab::Library | crate::app::AppTab::Develop
+        )
+        || !app.navigation_shortcuts_allowed(context)
         || !app.library.workflow.undo_context
         || app.library.local_mutation_in_progress()
     {
@@ -243,6 +248,9 @@ pub(crate) fn handle_workflow_shortcuts(app: &mut CalibRawApp, context: &egui::C
 }
 
 pub(crate) fn show_filmstrip_filter(ui: &mut Ui, app: &mut CalibRawApp) {
+    if !app.caps().has_folders() {
+        return;
+    }
     let mut selected_filter = app.library.workflow.filter;
     egui::ScrollArea::horizontal()
         .id_salt("hanna-filmstrip-filters")
@@ -268,6 +276,9 @@ pub(crate) fn show_filmstrip_filter(ui: &mut Ui, app: &mut CalibRawApp) {
 }
 
 pub(super) fn show_workflow_button(ui: &mut Ui, app: &mut CalibRawApp) {
+    if !app.caps().has_folders() {
+        return;
+    }
     let response = moduwu_design::toolbar_button(ui, format!("{} HANNA", regular::TRASH), 85.0)
         .on_hover_text(&app.library.status);
     moduwu_design::dropdown_menu(&response, |ui| show_workflow_menu(ui, app));

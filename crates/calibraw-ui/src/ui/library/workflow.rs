@@ -541,6 +541,25 @@ mod tests {
         library.entries[0].texture = Some(texture.clone());
         library.poll_hanna_workflow(&context);
         let generation = library.generation.load(Ordering::Acquire);
+        // UI and programmatic reviews must not enqueue a sidecar write while
+        // a file worker owns the folder. Existing cache/reviews stay unchanged.
+        let (sender, receiver) = mpsc::channel();
+        library.workflow.receiver = Some(receiver);
+        assert!(library
+            .save_reviews(
+                vec![super::super::ReviewSave {
+                    asset: first_asset.clone(),
+                    change: super::super::ReviewChange::Rating(1),
+                    editing_time_ms: None,
+                }],
+                &context
+            )
+            .is_err());
+        assert_eq!(library.entries[0].review().rating, 5);
+        assert!(!library.review_saves_pending());
+        assert!(!folder.path().join("first.NEF.calibraw").exists());
+        library.workflow.receiver = None;
+        drop(sender);
         library.select_filmstrip_all();
         assert_eq!(library.selected_assets().len(), 2);
         library.set_filmstrip_filter(FilmstripFilter::Picked);

@@ -14,6 +14,15 @@ impl CalibRawApp {
         assets: Vec<LibraryAsset>,
         change: ReviewChange,
     ) -> Option<PhotoReview> {
+        if self.library.hanna_file_operation_in_progress() {
+            self.ui.notice = Some(
+                crate::i18n::tr(
+                    "Wait for the HANNA file operation to finish before changing ratings or flags.",
+                )
+                .to_owned(),
+            );
+            return None;
+        }
         let single = assets.len() == 1;
         let mut result = None;
         let mut saves = Vec::with_capacity(assets.len());

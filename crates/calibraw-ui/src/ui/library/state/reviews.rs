@@ -159,6 +159,12 @@ impl LibraryState {
         if saves.is_empty() {
             return Ok(());
         }
+        if self.hanna_file_operation_in_progress() {
+            return Err(tr(
+                "Wait for the HANNA file operation to finish before saving ratings or flags.",
+            )
+            .to_owned());
+        }
         let mut resort = false;
         for save in &saves {
             if let Some(review) = self.review_of(&save.asset.id) {

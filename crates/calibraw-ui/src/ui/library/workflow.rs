@@ -411,19 +411,19 @@ fn start_operation(app: &mut CalibRawApp, operation: WorkflowOperation, context:
         return;
     };
     app.settle_library_review_saves();
+    if app.library.review_saves_pending() || app.ui.error_dialogs.is_open() {
+        app.library.status =
+            tr("Could not finish saving photo reviews. No HANNA file operation was started.")
+                .to_owned();
+        return;
+    }
     if matches!(operation, WorkflowOperation::Move) {
-        let marked = app
-            .library
-            .workflow
-            .store
-            .as_ref()
-            .map_or_else(Vec::new, PendingDeleteStore::pending_paths);
         let affects_current = app.develop.current_path.as_ref().is_some_and(|current| {
-            marked.iter().any(|path| {
-                path == current
-                    || (path.parent() == current.parent()
-                        && path.file_stem() == current.file_stem())
-            })
+            app.library
+                .workflow
+                .store
+                .as_ref()
+                .is_some_and(|store| store.move_includes(current))
         });
         if affects_current {
             if let Err(error) = app.close_document_for_hanna_move() {

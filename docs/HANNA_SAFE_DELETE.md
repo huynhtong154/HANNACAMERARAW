@@ -30,8 +30,11 @@ refuse an unsupported filesystem rather than risk an overwriting rename.
 
 **Restore to Original Folder** replays manifests, including interrupted moves and
 restores. It restores exact original names. If the original name is occupied,
-both files are retained and the conflict is reported; after resolving the
-conflict the user can retry Restore. Missing files, sharing violations, permission
+the entire transaction batch is retained and the conflict is reported. This
+prevents attaching a restored sidecar to a different photo occupying the RAW's
+original name. After resolving the conflict the user can retry Restore. A new
+I/O error or collision during restore stops that batch with its journal intact.
+Missing files, sharing violations, permission
 errors and partial operations are reported. No file is overwritten, automatically
 renamed, permanently deleted, or purged by time. Completed journals remain in
 HANNA_Deleted. A per-folder OS file lock serializes actions and is automatically

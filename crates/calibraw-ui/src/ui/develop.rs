@@ -47,7 +47,9 @@ impl Develop {
         app: &mut CalibRawApp,
         frame: &eframe::Frame,
     ) {
-        if !app.navigation_shortcuts_allowed(context) {
+        if !app.navigation_shortcuts_allowed(context)
+            || app.library.hanna_file_operation_in_progress()
+        {
             return;
         }
 

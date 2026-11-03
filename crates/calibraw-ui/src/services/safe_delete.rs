@@ -81,6 +81,25 @@ impl PendingDeleteStore {
             .is_ok_and(|relative| self.document.pending.contains(&relative))
     }
 
+    /// The same bundle policy as the move, without reading/decoding any photo.
+    /// Used once before a confirmed move to flush and close its open document.
+    pub(crate) fn move_includes(&self, path: &Path) -> bool {
+        let relative = self.relative_path(path).or_else(|_| {
+            let canonical = fs::canonicalize(path)?;
+            self.relative_path(&ordinary_path(canonical))
+        });
+        let Ok(relative) = relative else {
+            return false;
+        };
+        self.document.pending.contains(&relative)
+            || (is_rendered_companion(&relative)
+                && self.document.pending.iter().any(|marked| {
+                    is_camera_raw_path(marked)
+                        && marked.parent() == relative.parent()
+                        && lower_stem(marked) == lower_stem(&relative)
+                }))
+    }
+
     pub(crate) fn pending_paths(&self) -> Vec<PathBuf> {
         self.document
             .pending
@@ -281,6 +300,23 @@ pub(crate) fn restore_all(root: &Path) -> Result<OperationReport> {
     let mut restored_photos = BTreeSet::new();
     for (batch, mut manifest) in manifests {
         let manifest_path = batch.join(MANIFEST_FILE);
+        // Restore is a batch decision: do not attach an old sidecar/JPEG to a
+        // different photo already occupying the original RAW filename.
+        let mut conflicts = false;
+        for entry in &manifest.entries {
+            if matches!(entry.state, EntryState::Restored) {
+                continue;
+            }
+            let stored = checked_file(&batch, &entry.stored, true)?;
+            let original = checked_file(&root, &entry.original, true)?;
+            if stored.try_exists()? && original.try_exists()? {
+                conflicts = true;
+                report.failures.push(format!("Restore conflict: {} already exists; this entire batch was retained in HANNA_Deleted.", original.display()));
+            }
+        }
+        if conflicts {
+            continue;
+        }
         for index in 0..manifest.entries.len() {
             // A completed old transaction must not unmark a newly marked photo
             // or interfere with a later transaction of the same filename.
@@ -300,7 +336,7 @@ pub(crate) fn restore_all(root: &Path) -> Result<OperationReport> {
                         report
                             .failures
                             .push(format!("{}: {error}", destination.display()));
-                        continue;
+                        break;
                     }
                     report.files += 1;
                 }
@@ -309,14 +345,14 @@ pub(crate) fn restore_all(root: &Path) -> Result<OperationReport> {
                         "Restore conflict: {} already exists; the quarantined file was retained.",
                         destination.display()
                     ));
-                    continue;
+                    break;
                 }
                 (false, false) => {
                     report.failures.push(format!(
                         "Missing at both original and quarantine paths: {}",
                         original.display()
                     ));
-                    continue;
+                    break;
                 }
                 (false, true) => {}
             }
@@ -446,14 +482,7 @@ fn photo_bundle(root: &Path, selected: &Path) -> Result<BTreeSet<PathBuf>> {
         let stem = lower_stem(&selected_path);
         for sibling in &siblings {
             let path = sibling.path();
-            if lower_stem(&path) == stem
-                && path.extension().is_some_and(|extension| {
-                    matches!(
-                        extension.to_string_lossy().to_ascii_lowercase().as_str(),
-                        "jpg" | "jpeg" | "heic" | "heif"
-                    )
-                })
-            {
+            if lower_stem(&path) == stem && is_rendered_companion(&path) {
                 photos.insert(path);
             }
         }
@@ -501,6 +530,15 @@ fn lower_stem(path: &Path) -> String {
         .unwrap_or_default()
         .to_string_lossy()
         .to_lowercase()
+}
+
+fn is_rendered_companion(path: &Path) -> bool {
+    path.extension().is_some_and(|extension| {
+        matches!(
+            extension.to_string_lossy().to_ascii_lowercase().as_str(),
+            "jpg" | "jpeg" | "heic" | "heif"
+        )
+    })
 }
 
 fn canonical_root(root: &Path) -> Result<PathBuf> {

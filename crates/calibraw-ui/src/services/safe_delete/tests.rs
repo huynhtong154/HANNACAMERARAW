@@ -97,6 +97,58 @@ fn rendered_photo_does_not_implicitly_move_its_raw() -> Result<()> {
 }
 
 #[test]
+fn open_document_membership_matches_case_insensitive_raw_companion_policy() -> Result<()> {
+    let folder = tempfile::tempdir()?;
+    let raw = folder.path().join("Pair.NEF");
+    let jpeg = folder.path().join("pair.JPG");
+    let export = folder.path().join("Pair.png");
+    for path in [&raw, &jpeg, &export] {
+        fs::write(path, b"photo")?;
+    }
+    let mut store = PendingDeleteStore::load(folder.path())?;
+    store.set_pending(std::slice::from_ref(&raw), true)?;
+    assert!(store.move_includes(&raw));
+    assert!(store.move_includes(&jpeg));
+    assert!(store.move_includes(&fs::canonicalize(&jpeg)?));
+    assert!(!store.move_includes(&export));
+    store.set_pending(std::slice::from_ref(&raw), false)?;
+    store.set_pending(std::slice::from_ref(&jpeg), true)?;
+    assert!(!store.move_includes(&raw));
+    assert!(store.move_includes(&jpeg));
+    Ok(())
+}
+
+#[test]
+fn restore_conflict_retains_the_whole_batch_including_sidecars() -> Result<()> {
+    let folder = tempfile::tempdir()?;
+    let files = ["pair.NEF", "pair.JPG", "pair.NEF.calibraw", "pair.XMP"];
+    for name in files {
+        fs::write(folder.path().join(name), name.as_bytes())?;
+    }
+    let raw = folder.path().join("pair.NEF");
+    PendingDeleteStore::load(folder.path())?.set_pending(std::slice::from_ref(&raw), true)?;
+    assert_eq!(move_marked(folder.path())?.files, files.len());
+    fs::write(&raw, b"different photo occupying the name")?;
+    let conflict = restore_all(folder.path())?;
+    assert_eq!(conflict.files, 0);
+    assert_eq!(conflict.failures.len(), 1);
+    assert_eq!(quarantined_files(folder.path())?, files.len());
+    for name in &files[1..] {
+        assert!(!folder.path().join(name).exists());
+    }
+    assert_eq!(fs::read(&raw)?, b"different photo occupying the name");
+    // Resolve only the generated test conflict and retry the entire batch.
+    fs::remove_file(&raw)?;
+    let restored = restore_all(folder.path())?;
+    assert!(restored.failures.is_empty());
+    assert_eq!(restored.files, files.len());
+    for name in files {
+        assert_eq!(fs::read(folder.path().join(name))?, name.as_bytes());
+    }
+    Ok(())
+}
+
+#[test]
 fn completed_journal_does_not_unmark_a_new_delete_or_interfere_with_a_later_move() -> Result<()> {
     let folder = tempfile::tempdir()?;
     let photo = folder.path().join("photo.NEF");

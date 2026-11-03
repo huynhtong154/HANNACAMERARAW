@@ -17,7 +17,7 @@ impl LibraryState {
     /// The folder photo before or after `path` in the library grid's order.
     pub(crate) fn adjacent_library_path(&self, path: &Path, forward: bool) -> Option<PathBuf> {
         let current_index = self.filmstrip_index_for_path(path)?;
-        let visible_indices = self.visible_entry_indices();
+        let visible_indices = self.filmstrip_entry_indices();
         let target_position = match visible_indices.binary_search(&current_index) {
             Ok(position) if forward => position.checked_add(1),
             Ok(position) => position.checked_sub(1),

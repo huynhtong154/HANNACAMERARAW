@@ -208,7 +208,12 @@ pub(in crate::ui::library) fn scan_folder_tree(
                     continue;
                 }
             };
-            if !file_type.is_dir() {
+            if !file_type.is_dir()
+                || entry
+                    .file_name()
+                    .to_string_lossy()
+                    .eq_ignore_ascii_case("HANNA_Deleted")
+            {
                 continue;
             }
             if let Some(child) = visit(entry.path(), is_cancelled) {
@@ -243,6 +248,16 @@ pub(in crate::ui::library) fn scan_folder_with_limit(
     maximum_files: usize,
     is_cancelled: impl Fn() -> bool,
 ) -> Result<Option<FolderScan>, String> {
+    if folder.components().any(|part| {
+        part.as_os_str()
+            .to_string_lossy()
+            .eq_ignore_ascii_case("HANNA_Deleted")
+    }) {
+        return Err(tr_fmt(
+            "{folder} is reserved for recoverable HANNA deletions.",
+            &[("folder", &folder.display())],
+        ));
+    }
     if is_cancelled() {
         return Ok(None);
     }

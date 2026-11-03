@@ -159,6 +159,13 @@ impl CalibRawApp {
         view: Option<KeptView>,
         frame: &eframe::Frame,
     ) {
+        if self.library.hanna_file_operation_in_progress() {
+            if let Some(copy) = source.disposable_copy() {
+                remove_temporary_raw(copy);
+            }
+            self.ui.notice = Some(tr("Wait for the HANNA file operation to finish.").to_owned());
+            return;
+        }
         if self.develop.load_receiver.is_some() {
             if let Some(copy) = source.disposable_copy() {
                 remove_temporary_raw(copy);
@@ -292,6 +299,31 @@ impl CalibRawApp {
             folder: self.preferences.camera_profile_folder.clone(),
             last_used: self.preferences.last_camera_profile.clone(),
         }
+    }
+
+    /// Finishes sidecar writes before a confirmed recoverable file move.
+    /// A failed/timed-out save aborts the move, preserving the open document.
+    pub(crate) fn close_document_for_hanna_move(&mut self) -> Result<(), String> {
+        self.flush_sidecar_on_exit();
+        if self.sidecar_save_in_progress()
+            || (self.can_save_edits()
+                && self.persistence.sidecar_saved_revision != Some(self.edit_commit_revision()))
+        {
+            return Err(
+                tr("Could not finish saving edits. No HANNA file move was started.").to_owned(),
+            );
+        }
+        self.detach_current_sidecar_target_for_library_action();
+        self.clear_decoded_raws();
+        self.develop.load_receiver = None;
+        self.preview.rebuild_receiver = None;
+        self.preview.drop_detail_rebuild();
+        self.preview.full_resolution.cancel_running();
+        drop(self.take_preview_pipeline_and_release_textures());
+        self.reset_document_state("", self.new_image_exposure());
+        self.develop.image_status = tr("Open a photo to start editing").to_owned();
+        self.activate_tab(AppTab::Library);
+        Ok(())
     }
 
     /// Clears everything tied to the previous document before a new one loads.

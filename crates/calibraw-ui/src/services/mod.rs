@@ -6,3 +6,4 @@
 //! repaints and displayed state.
 
 pub(crate) mod replay;
+pub(crate) mod safe_delete;

@@ -217,6 +217,7 @@ impl LibraryState {
     }
 
     pub(crate) fn poll(&mut self, context: &egui::Context) {
+        self.poll_hanna_workflow(context);
         let pasted = self
             .asset_transfer_receiver
             .as_ref()

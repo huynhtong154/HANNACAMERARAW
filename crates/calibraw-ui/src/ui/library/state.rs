@@ -126,6 +126,7 @@ impl LibraryState {
         } = preferences;
         let thumbnail_workers = preferences.thumbnail_workers();
         Self {
+            workflow: super::workflow::HannaWorkflow::default(),
             location,
             folder: None,
             root_folder: None,
@@ -195,7 +196,9 @@ impl LibraryState {
     }
 
     pub(crate) fn transient_dialog_open(&self) -> bool {
-        let common = self.delete_originals_confirmation.is_some()
+        let common = self.workflow.confirmation.is_some()
+            || self.workflow.result_message.is_some()
+            || self.delete_originals_confirmation.is_some()
             || self.raw_name_dialog.is_some()
             || self.export_dialog.is_some()
             || self.adjustment_paste_dialog.is_some()
@@ -207,7 +210,7 @@ impl LibraryState {
     }
 
     pub(crate) fn local_mutation_in_progress(&self) -> bool {
-        if self.asset_transfer_in_progress() {
+        if self.asset_transfer_in_progress() || self.workflow.receiver.is_some() {
             return true;
         }
         self.raw_import_receiver.is_some()
@@ -246,7 +249,14 @@ impl LibraryState {
     /// stacked like the library grid.
     pub(crate) fn filmstrip_entry_indices(&self) -> Vec<usize> {
         (0..self.entries.len())
-            .filter(|index| !self.hides_raw_companion(&self.entries[*index].asset.id))
+            .filter(|index| {
+                let entry = &self.entries[*index];
+                !self.hides_raw_companion(&entry.asset.id)
+                    && self
+                        .workflow
+                        .filter
+                        .matches(entry.review(), self.is_pending_delete(&entry.asset))
+            })
             .collect()
     }
 
@@ -268,6 +278,7 @@ impl LibraryState {
             texture: entry.texture.clone(),
             thumbnail_size: entry.thumbnail_size,
             developed_thumbnail_pending: entry.developed_thumbnail_pending,
+            pending_delete: self.is_pending_delete(&entry.asset),
         })
     }
 

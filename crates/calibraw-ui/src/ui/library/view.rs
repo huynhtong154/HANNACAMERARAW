@@ -187,6 +187,7 @@ impl Library {
                         toggle_selecting = true;
                     }
 
+                    super::workflow::show_workflow_button(ui, app);
                     if compact_header {
                         sort_filter_popup(
                             ui,
@@ -468,6 +469,9 @@ fn show_thumbnail_grid(
                 let asset_id = entry.asset.id.clone();
                 let selected = app.library.is_selected(&asset_id);
                 let tile = thumbnail_tile(ui, entry, item_rect, selecting.then_some(selected));
+                if app.library.is_pending_delete(&entry.asset) {
+                    paint_pending_delete(ui, item_rect);
+                }
                 let response = tile.response;
                 // Browsing with a pointer, hovering shows the details and
                 // rating controls; otherwise the review badge stays.

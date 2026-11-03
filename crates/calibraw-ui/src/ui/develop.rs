@@ -11,7 +11,7 @@ use moduwu_design::MenuItem;
 use std::collections::HashSet;
 use std::sync::{mpsc, Mutex, OnceLock};
 
-pub(crate) const FILMSTRIP_HEIGHT: f32 = 128.0;
+pub(crate) const FILMSTRIP_HEIGHT: f32 = 164.0;
 const FILMSTRIP_CARD_HEIGHT: f32 = 96.0;
 const FILMSTRIP_GAP: f32 = 8.0;
 const FILMSTRIP_PRELOAD_POINTS: f32 = 360.0;
@@ -50,9 +50,54 @@ impl Develop {
             return;
         }
 
+        if context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::A)) {
+            app.library.select_filmstrip_all();
+            return;
+        }
+        if context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+            app.library.clear_selection();
+            return;
+        }
+        if context.input_mut(|input| {
+            input.consume_key(egui::Modifiers::NONE, egui::Key::Delete)
+                || input.consume_key(egui::Modifiers::NONE, egui::Key::Backspace)
+        }) {
+            let selected = app.library.selected_assets();
+            let assets = if selected.is_empty() {
+                current_photo_asset(app).into_iter().collect()
+            } else {
+                selected
+            };
+            app.library.mark_pending_delete(&assets, true);
+            app.ui.notice = Some(app.library.workflow_status().to_owned());
+            return;
+        }
+        for (key, forward) in [(egui::Key::ArrowLeft, false), (egui::Key::ArrowRight, true)] {
+            if context.input_mut(|input| input.consume_key(egui::Modifiers::SHIFT, key)) {
+                if let Some(current) = app.develop.current_path.clone() {
+                    let current_id = crate::ui::library::LibraryAssetId::Desktop(current.clone());
+                    app.library.anchor_filmstrip_selection(&current_id);
+                    if let Some(path) = app.library.adjacent_library_path(&current, forward) {
+                        let id = crate::ui::library::LibraryAssetId::Desktop(path.clone());
+                        app.library.select_filmstrip_item(&id, true);
+                        app.switch_to_path(path, frame);
+                    }
+                }
+                return;
+            }
+        }
+
         if let Some(key) = take_review_key(context) {
             if let Some(asset) = current_photo_asset(app) {
-                app.review_photos_from_keyboard(vec![asset], key.change);
+                let selected = app.library.selected_assets();
+                app.review_photos_from_keyboard(
+                    if selected.is_empty() {
+                        vec![asset]
+                    } else {
+                        selected
+                    },
+                    key.change,
+                );
                 if key.advance {
                     open_adjacent_photo(app, true, frame);
                 }
@@ -92,6 +137,7 @@ impl Develop {
             .fill(ui.visuals().panel_fill)
             .inner_margin(egui::Margin::symmetric(moduwu_design::CONTENT_MARGIN, 10))
             .show(ui, |ui| {
+                crate::ui::library::show_filmstrip_filter(ui, app);
                 ui.set_min_height(FILMSTRIP_CARD_HEIGHT);
                 show_filmstrip_contents(ui, app, frame);
             });
@@ -294,14 +340,32 @@ fn show_filmstrip_contents(ui: &mut Ui, app: &mut CalibRawApp, frame: &eframe::F
                     let active = active_id.as_ref() == Some(&item.asset.id);
                     let item_path = item.asset.desktop_path();
                     let reference = item_path.is_some() && reference_path.as_deref() == item_path;
-                    let response = filmstrip_thumbnail(ui, &item, rect, active, reference);
+                    let selected = app.library.filmstrip_selected(&item.asset.id);
+                    let response =
+                        filmstrip_thumbnail(ui, &item, rect, active || selected, reference);
 
-                    if response.clicked() && !response.secondary_clicked() && !active {
-                        open_asset = Some(item.asset.clone());
+                    if response.clicked() && !response.secondary_clicked() {
+                        let modifiers = ui.input(|input| input.modifiers);
+                        if modifiers.command || modifiers.ctrl || modifiers.shift {
+                            if let Some(id) = active_id.as_ref() {
+                                app.library.anchor_filmstrip_selection(id);
+                            }
+                            app.library
+                                .select_filmstrip_item(&item.asset.id, modifiers.shift);
+                        } else {
+                            app.library.clear_selection();
+                            if !active {
+                                open_asset = Some(item.asset.clone());
+                            }
+                        }
                     }
 
                     moduwu_design::context_menu(&response, |ui| {
-                        let assets = [item.asset.clone()];
+                        let assets = if selected {
+                            app.library.selected_assets()
+                        } else {
+                            vec![item.asset.clone()]
+                        };
                         if let Some(action) =
                             photo_actions_menu(ui, app, &assets, Some(&item.asset))
                         {
@@ -634,6 +698,10 @@ fn filmstrip_thumbnail(
     if item.developed_thumbnail_pending {
         let center = rect.right_top() + egui::vec2(-13.0, 13.0);
         crate::ui::components::pending_indicator(&painter, center, 10.0, 13.0);
+    }
+
+    if item.pending_delete {
+        crate::ui::library::paint_pending_delete(ui, rect);
     }
 
     if active {

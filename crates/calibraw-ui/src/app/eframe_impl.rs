@@ -230,7 +230,9 @@ impl CalibRawApp {
         } else if self.android_foreground_task_active() {
             return;
         }
-        self.handle_edit_history_shortcuts(ctx);
+        if !crate::ui::library::handle_workflow_shortcuts(self, ctx) {
+            self.handle_edit_history_shortcuts(ctx);
+        }
         self.handle_sidecar_shortcut(ctx);
         if self.ui.active_tab == AppTab::Develop {
             Develop::handle_shortcuts(ctx, self, frame);

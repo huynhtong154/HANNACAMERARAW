@@ -23,6 +23,8 @@ pub(crate) enum LibraryAction {
     RevealFile(LibraryAsset),
     ResetAdjustments(Vec<LibraryAsset>),
     Delete(Vec<LibraryAsset>),
+    RestorePending(Vec<LibraryAsset>),
+    Recycle(Vec<LibraryAsset>),
 }
 
 /// Whether photo actions can start: no file action, batch export or AI mask
@@ -162,13 +164,40 @@ pub(crate) fn photo_actions_menu(
     if menu_row(
         ui,
         enabled,
-        MenuItem::new(tr("Delete…"))
+        MenuItem::new(tr("Mark Pending Delete"))
             .icon(regular::TRASH)
             .destructive(),
     )
     .clicked()
     {
         action = Some(LibraryAction::Delete(assets.to_vec()));
+    }
+    if menu_row(
+        ui,
+        enabled
+            && assets
+                .iter()
+                .any(|asset| app.library.is_pending_delete(asset)),
+        MenuItem::new(tr("Restore Pending Delete marks")).icon(regular::ARROW_COUNTER_CLOCKWISE),
+    )
+    .clicked()
+    {
+        action = Some(LibraryAction::RestorePending(assets.to_vec()));
+    }
+    if app.caps().has_folders()
+        && menu_row(
+            ui,
+            enabled,
+            MenuItem::new(tr_fmt(
+                "Move to {trash}…",
+                &[("trash", &crate::platform::trash_name())],
+            ))
+            .icon(regular::TRASH)
+            .destructive(),
+        )
+        .clicked()
+    {
+        action = Some(LibraryAction::Recycle(assets.to_vec()));
     }
     action
 }
@@ -296,7 +325,10 @@ pub(crate) fn apply_library_action(
     action: LibraryAction,
 ) {
     // Every other action reads, writes, moves or deletes the photos' files.
-    if !matches!(action, LibraryAction::Review(..)) {
+    if !matches!(
+        action,
+        LibraryAction::Review(..) | LibraryAction::Delete(..) | LibraryAction::RestorePending(..)
+    ) {
         app.settle_library_review_saves();
     }
     match action {
@@ -435,6 +467,14 @@ pub(crate) fn apply_library_action(
             }
         }
         LibraryAction::Delete(assets) => {
+            app.library.mark_pending_delete(&assets, true);
+            app.ui.notice = Some(app.library.status.clone());
+        }
+        LibraryAction::RestorePending(assets) => {
+            app.library.mark_pending_delete(&assets, false);
+            app.ui.notice = Some(app.library.status.clone());
+        }
+        LibraryAction::Recycle(assets) => {
             if !assets.is_empty() {
                 app.library.delete_originals_confirmation = Some(assets);
             }
@@ -848,6 +888,7 @@ pub(crate) fn show_library_action_overlays(
     app: &mut CalibRawApp,
     frame: &eframe::Frame,
 ) {
+    super::workflow::show_workflow_confirmation(ui, app);
     let delete_choice = app
         .library
         .delete_originals_confirmation

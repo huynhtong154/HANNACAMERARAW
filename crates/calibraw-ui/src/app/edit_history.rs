@@ -429,6 +429,7 @@ impl EditHistory {
 
 impl CalibRawApp {
     pub(crate) fn note_edit_changed(&mut self) {
+        self.library.leave_pending_undo_context();
         self.persistence.history.note_change();
     }
 

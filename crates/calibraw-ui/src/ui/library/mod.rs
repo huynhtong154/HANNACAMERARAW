@@ -43,12 +43,14 @@ pub(crate) use state::LibraryPreferences;
 mod storage;
 mod thumbnails;
 mod view;
+mod workflow;
 use hover::thumbnail_hover_overlay;
 pub(crate) use review::{
     current_document_id, current_photo_asset, paint_review_badge, show_current_photo_review,
     show_review_feedback, take_review_key, ReviewChange, ReviewFeedback,
 };
 pub(crate) use state::ReviewSave;
+pub(crate) use workflow::{handle_workflow_shortcuts, paint_pending_delete, show_filmstrip_filter};
 
 use actions::*;
 use adjustments::*;
@@ -349,6 +351,7 @@ pub(crate) struct FilmstripItem {
     pub(crate) texture: Option<egui::TextureHandle>,
     pub(crate) thumbnail_size: Option<[u32; 2]>,
     pub(crate) developed_thumbnail_pending: bool,
+    pub(crate) pending_delete: bool,
 }
 
 struct LoadedLibraryThumbnail {
@@ -728,6 +731,7 @@ pub(crate) struct AdjustmentClipboard {
 }
 
 pub(crate) struct LibraryState {
+    workflow: workflow::HannaWorkflow,
     location: Option<String>,
     folder: Option<PathBuf>,
     root_folder: Option<PathBuf>,

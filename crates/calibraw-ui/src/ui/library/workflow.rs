@@ -191,6 +191,14 @@ impl LibraryState {
             self.add_to_selection(&id);
         }
     }
+
+    fn set_filmstrip_filter(&mut self, filter: FilmstripFilter) {
+        if self.workflow.filter != filter {
+            self.workflow.filter = filter;
+            // A later Delete must not target selections hidden by this filter.
+            self.clear_selection();
+        }
+    }
 }
 
 pub(crate) fn handle_workflow_shortcuts(app: &mut CalibRawApp, context: &egui::Context) -> bool {
@@ -235,11 +243,12 @@ pub(crate) fn handle_workflow_shortcuts(app: &mut CalibRawApp, context: &egui::C
 }
 
 pub(crate) fn show_filmstrip_filter(ui: &mut Ui, app: &mut CalibRawApp) {
+    let mut selected_filter = app.library.workflow.filter;
     egui::ScrollArea::horizontal()
         .id_salt("hanna-filmstrip-filters")
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                let filter = &mut app.library.workflow.filter;
+                let filter = &mut selected_filter;
                 ui.selectable_value(filter, FilmstripFilter::All, tr("All Photos"));
                 ui.selectable_value(filter, FilmstripFilter::Picked, tr("Picked"));
                 ui.selectable_value(filter, FilmstripFilter::Rejected, tr("Rejected"));
@@ -255,6 +264,7 @@ pub(crate) fn show_filmstrip_filter(ui: &mut Ui, app: &mut CalibRawApp) {
                 show_workflow_button(ui, app);
             });
         });
+    app.library.set_filmstrip_filter(selected_filter);
 }
 
 pub(super) fn show_workflow_button(ui: &mut Ui, app: &mut CalibRawApp) {
@@ -520,14 +530,20 @@ mod tests {
         library.entries[0].texture = Some(texture.clone());
         library.poll_hanna_workflow(&context);
         let generation = library.generation.load(Ordering::Acquire);
-        library.workflow.filter = FilmstripFilter::Picked;
+        library.select_filmstrip_all();
+        assert_eq!(library.selected_assets().len(), 2);
+        library.set_filmstrip_filter(FilmstripFilter::Picked);
+        assert!(library.selected_assets().is_empty());
         assert_eq!(library.filmstrip_entry_indices(), [0]);
-        library.workflow.filter = FilmstripFilter::Rejected;
+        library.select_filmstrip_all();
+        assert_eq!(library.selected_assets().len(), 1);
+        library.set_filmstrip_filter(FilmstripFilter::Rejected);
+        assert!(library.selected_assets().is_empty());
         assert_eq!(library.filmstrip_entry_indices(), [1]);
-        library.workflow.filter = FilmstripFilter::Rating(5);
+        library.set_filmstrip_filter(FilmstripFilter::Rating(5));
         assert_eq!(library.filmstrip_entry_indices(), [0]);
         library.mark_pending_delete(std::slice::from_ref(&first_asset), true);
-        library.workflow.filter = FilmstripFilter::PendingDelete;
+        library.set_filmstrip_filter(FilmstripFilter::PendingDelete);
         assert_eq!(library.filmstrip_entry_indices(), [0]);
         assert_eq!(library.entries[0].review().flag, PhotoFlag::Picked);
         assert_eq!(

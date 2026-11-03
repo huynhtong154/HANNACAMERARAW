@@ -33,6 +33,7 @@ fn open_adjacent_photo(app: &mut CalibRawApp, forward: bool, frame: &eframe::Fra
         return;
     };
     if let Some(path) = app.library.adjacent_library_path(current_path, forward) {
+        app.library.clear_selection();
         app.switch_to_path(path, frame);
     }
 }

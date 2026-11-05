@@ -37,26 +37,30 @@ pub(crate) fn tone_curve_editor(
         Sense::click_and_drag()
     };
     let (rect, area) = ui.allocate_exact_size(egui::vec2(width, CURVE_HEIGHT), area_sense);
-    // Each point takes drags that begin within the radius a drag picks it
-    // from. Its taps count as taps on the curve: a widget that takes drags
-    // also takes the clicks on it, so the area beneath would miss them.
+    // On desktop the curve is a single pointer target. Per-point interactive
+    // rectangles would intercept clicks even outside the visible handles.
+    // Touch retains small handle targets so the surrounding panel can scroll.
     let area_id = area.id;
     let selection_id = area_id.with("selected-point");
     let mut selected = ui
         .data(|data| data.get_temp::<usize>(selection_id))
         .filter(|index| *index < curve.len as usize);
-    let response = (0..curve.len as usize).fold(area, |response, index| {
-        let hit = egui::Rect::from_center_size(
-            curve_to_screen(rect, curve.points[index]),
-            egui::Vec2::splat(PICK_RADIUS * 4.0),
-        )
-        .intersect(rect);
-        response.union(ui.interact(
-            hit,
-            area_id.with(("curve-point", index)),
-            Sense::click_and_drag(),
-        ))
-    });
+    let response = if touch {
+        (0..curve.len as usize).fold(area, |response, index| {
+            let hit = egui::Rect::from_center_size(
+                curve_to_screen(rect, curve.points[index]),
+                egui::Vec2::splat(PICK_RADIUS * 2.0),
+            )
+            .intersect(rect);
+            response.union(ui.interact(
+                hit,
+                area_id.with(("curve-point", index)),
+                Sense::click_and_drag(),
+            ))
+        })
+    } else {
+        area
+    };
     let mut changed = false;
     // The point is chosen where the press began and kept for the whole drag.
     // Re-picking the nearest point each frame dropped it whenever the pointer
@@ -67,7 +71,7 @@ pub(crate) fn tone_curve_editor(
         let grabbed = ui
             .input(|input| input.pointer.press_origin())
             .and_then(|origin| {
-                let index = nearest_point(curve, rect, origin, PICK_RADIUS * 2.0)?;
+                let index = nearest_point(curve, rect, origin, PICK_RADIUS)?;
                 let pointer = screen_to_curve(rect, origin);
                 let point = curve.points[index];
                 Some(GrabbedPoint {
@@ -263,9 +267,6 @@ pub(crate) fn tone_curve_editor(
         };
         overlay_painter.circle_filled(center, radius, fill);
         overlay_painter.circle_stroke(center, radius, Stroke::new(1.5, curve_color));
-    }
-    if changed {
-        ui.ctx().request_repaint();
     }
     changed
 }
@@ -625,6 +626,68 @@ fn tone_curve_id(tab: ToneCurveTab) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repeated_mouse_clicks_add_eight_points_without_hidden_hit_regions() {
+        use egui::{Event, Modifiers, PointerButton, RawInput};
+        let context = egui::Context::default();
+        let mut curve = PointCurve::linear();
+        let mut time = 0.0;
+        let mut frame = |curve: &mut PointCurve, events: Vec<Event>| {
+            time += 0.2;
+            let mut changed = false;
+            let mut bounds = egui::Rect::NOTHING;
+            let _ = context.run_ui(
+                RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        Pos2::ZERO,
+                        egui::vec2(420.0, 420.0),
+                    )),
+                    time: Some(time),
+                    events,
+                    ..RawInput::default()
+                },
+                |ui| {
+                    bounds = egui::Rect::from_min_size(
+                        ui.cursor().min,
+                        egui::vec2(ui.available_width(), CURVE_HEIGHT),
+                    );
+                    changed = tone_curve_editor(ui, curve, Color32::WHITE, false);
+                },
+            );
+            (changed, bounds)
+        };
+        let (_, bounds) = frame(&mut curve, vec![]);
+        for index in 0..8 {
+            let x = 0.1 + 0.1 * index as f32;
+            let position = curve_to_screen(bounds, [x, if index % 2 == 0 { 0.25 } else { 0.75 }]);
+            let event = |pressed| Event::PointerButton {
+                pos: position,
+                button: PointerButton::Primary,
+                pressed,
+                modifiers: Modifiers::NONE,
+            };
+            frame(&mut curve, vec![Event::PointerMoved(position), event(true)]);
+            assert!(
+                frame(&mut curve, vec![event(false)]).0,
+                "click {} should insert",
+                index + 1
+            );
+            assert_eq!(curve.len as usize, index + 3);
+        }
+        // Clicking an existing handle selects it; the same pixel cannot add
+        // a second point or dispatch another preview edit.
+        let existing = curve_to_screen(bounds, curve.points[4]);
+        let event = |pressed| Event::PointerButton {
+            pos: existing,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        };
+        frame(&mut curve, vec![Event::PointerMoved(existing), event(true)]);
+        assert!(!frame(&mut curve, vec![event(false)]).0);
+        assert_eq!(curve.len, 10);
+    }
 
     #[test]
     fn point_edits_keep_order_endpoints_and_the_engine_limit() {
